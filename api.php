@@ -31,32 +31,52 @@ if (isset($values['login']) && isset($values['passwd'])) {
         if ($values['body']) {
             $arErrors = [];
             foreach ($values['body'] as $store) {
-                $arStore = \Bitrix\Catalog\StoreTable::getById($store["uuid"])->fetch();
+                $storeData = Bitrix\Catalog\StoreTable::getList(array(
+                    'filter' => array('=XML_ID' => $store["uuid"]),
+                    'select' => array('ID'),
+                ))->fetch();
+                $storeId = $storeData['ID'];
                 foreach ($store["stocks"] as $product) {
-                    if ($arStore) {
-                        $filter = ['=PRODUCT_ID' => $product['uuid'], '=STORE_ID' => $store["uuid"]];
-                    } else {
-                        $filter = ['=PRODUCT_ID' => $product['uuid'], 'STORE.ACTIVE' => 'Y'];
+                    $productId = false;
+                    $result = CCatalogProduct::GetList(
+                        [],
+                        ['=ELEMENT_XML_ID' => $product['uuid']],
+                        false,
+                        false,
+                        ['ID']
+                    );
+                    while ($ar_res = $result->Fetch()) {
+                        if ($ar_res['ID']) {
+                            $productId = $ar_res['ID'];
+                        }
                     }
-                    $rsStoreProduct = \Bitrix\Catalog\StoreProductTable::getList(array(
-                        'filter' => $filter,
-                        'limit' => 1,
-                        'select' => array('AMOUNT'),
-                    ));
-                    if ($arStoreProduct = $rsStoreProduct->fetch()) {
-                        $arStoreProduct['AMOUNT'] = $product['quantity'];
-                        $ID = CCatalogStoreProduct::Update($arStoreProduct['ID'], $arStoreProduct);
-                        if (!is_numeric($ID)) {
-                            $arErrors[] = 'Ошибка обновления товара ID=' . $product['uuid'];
+                    if ($productId) {
+                        if ($storeId) {
+                            $filter = ['=PRODUCT_ID' => $productId, '=STORE_ID' => $storeId];
+                        } else {
+                            $filter = ['=PRODUCT_ID' => $productId, 'STORE.ACTIVE' => 'Y'];
+                        }
+                        $rsStoreProduct = \Bitrix\Catalog\StoreProductTable::getList(array(
+                            'filter' => $filter,
+                            'limit' => 1,
+                            'select' => array('AMOUNT'),
+                        ));
+                        if ($arStoreProduct = $rsStoreProduct->fetch()) {
+                            $arStoreProduct['AMOUNT'] = $product['quantity'];
+                            if (!CCatalogStoreProduct::Update($productId, $arStoreProduct)) {
+                                $arErrors[] = 'Ошибка обновления товара ID=' . $productId;
+                            }
+                        } else {
+                            $arErrors[] = 'Товар не найден ID=' . $productId;
                         }
                     } else {
-                        $arErrors[] = 'Товар не найден ID=' . $product['uuid'];
+                        $arErrors[] = 'Товар не найден XML_ID=' . $product['uuid'];
                     }
                 }
             }
-            if(!empty($arErrors)){
+            if (!empty($arErrors)) {
                 echo json_encode(["success" => false, "errors" => $arErrors]);
-            }else{
+            } else {
                 echo json_encode(["success" => true]);
             }
         }
